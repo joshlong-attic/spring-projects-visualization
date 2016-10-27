@@ -8,8 +8,8 @@
     div.tooltip {
         position: absolute;
         text-align: center;
-        width: 60px;
-        height: 28px;
+        width: 100px;
+        /*height: 28px;*/
         padding: 2px;
         font: 12px sans-serif;
         background: lightsteelblue;
@@ -30,63 +30,120 @@
 
 </style>
 
+<!--
+
 <script src="jquery.js"></script>
 <script src="d3.js"></script>
-<!--
-https://d3js.org/d3.v4.min.js
-https://code.jquery.com/jquery-3.1.1.min.js
+
 -->
+
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
 
 <svg width="1000" height="1000"></svg>
 
 
 <script>
 
+    var config = {
+        rootUrl: 'http://localhost:8080'
+    };
 
-    // default settings
+    function dedupe(a) {
+        return a.filter(function (elem, pos) {
+            return a.indexOf(elem) == pos;
+        });
+    }
 
+    function buildNetwork(callback) {
+        $.getJSON(config.rootUrl + "/project_metadata/projects?callback=?", function (projectIds) {
 
-    function fetchProjects(callback) {
-        $.getJSON("http://localhost:8080/project_metadata/projects?callback=?", function (projectIds) {
-            var projects = [];
+            var projects = [], labels = [];
+
             var defers = projectIds.map(function (projectId) {
-                return $.getJSON("http://localhost:8080/project_metadata/" + projectId + "?callback=?", function (project) {
-                    var labels = project['projectLabels'].map(function (pl) {
+
+                return $.getJSON(config.rootUrl + "/project_metadata/" + projectId + "?callback=?", function (project) {
+
+                    var derivedLabels = project['projectLabels'].map(function (pl) {
                         return pl['label'];
                     });
-                    var item = {project: projectId, labels: labels};
+
+                    var item = {
+                        project: projectId,
+                        labels: derivedLabels,
+                        repoUrl: project['repoUrl'],
+                        aggregator: project['aggregator'],
+                        name: project['name'],
+                        siteUrl: project['siteUrl'],
+                        category: project ['category']
+                    };
+
+                    derivedLabels
+                            .forEach(function (l) {
+                                labels.push(l);
+                            });
+
                     projects.push(item);
+
                 });
             });
+
+
             $.when.apply($, defers).then(function () {
                 var args = arguments;
-                callback(projects);
-
+                var p = dedupe(projects).filter(function (p) {
+                    return p.labels.length > 0;
+                });
+                var l = dedupe(labels);
+                callback(p, l);
             });
         });
     }
 
 
-    fetchProjects(function (projects) {
-        var project_nodes = projects.map(function (p) {
-            return {'id': p['project'], group: 1};
+    buildNetwork(function (projects, labels) {
+
+        function tooltip(node) {
+
+            function displayHtmlTooltip(html) {
+
+                div.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+
+                div.html(html)
+                        .style("left", (d3.event.pageX) + "px")
+                        .style("top", (d3.event.pageY - 28) + "px");
+            }
+
+            projects
+                    .filter(function (proj) {
+                        return proj.project == node.id;
+                    })
+                    .forEach(function (resolvedProject) {
+                        displayHtmlTooltip(resolvedProject.name);
+                    });
+
+            labels
+                    .filter(function (label) {
+                        return label == node.id;
+                    })
+                    .forEach(function (resolvedLabel) {
+                        displayHtmlTooltip(resolvedLabel);
+                    });
+
+        }
+
+        var project_nodes = dedupe(projects.map(function (p) {
+            return {'id': p['project'], group: 1, type: 'project'};
+        }));
+
+        var label_nodes = labels.map(function (l) {
+            return {id: l, group: 2, type: 'label'};
         });
 
-        var label_nodes = (function () {
-            var x = [];
-            projects.forEach(function (p) {
-                p['labels'].forEach(function (label) {
-                    x.push({id: label, group: 2});
-                });
-            });
-            return x;
-        })();
-
         var nodes = (function () {
-            var combined = project_nodes.concat(label_nodes);
-            return combined.filter(function (elem, pos) {
-                return combined.indexOf(elem) == pos;
-            });
+            return dedupe(project_nodes.concat(label_nodes));
         })();
 
         // lets setup the links from labels to projects
@@ -97,19 +154,11 @@ https://code.jquery.com/jquery-3.1.1.min.js
                     x.push({target: l, source: p['project']});
                 });
             });
-            return x.filter(function (elem, pos) {
-                return x.indexOf(elem) == pos;
-            });
+            return dedupe(x);
         })();
 
 
-        var graph = {
-            "nodes": nodes,
-            "links": links
-        };
-
-        //////////////
-
+        var graph = {"nodes": nodes, "links": links};
 
         function dragstarted(d) {
             if (!d3.event.active) simulation.alphaTarget(0.3).restart();
@@ -128,10 +177,13 @@ https://code.jquery.com/jquery-3.1.1.min.js
             d.fy = null;
         }
 
+        var div = d3.select("body").append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+
         var svg = d3.select("svg"),
                 width = +svg.attr("width"),
                 height = +svg.attr("height");
-
 
         var color = d3.scaleOrdinal(d3.schemeCategory20);
 
@@ -163,12 +215,15 @@ https://code.jquery.com/jquery-3.1.1.min.js
                 .call(d3.drag()
                         .on("start", dragstarted)
                         .on("drag", dragged)
-                        .on("end", dragended));
-
-        node.append("title").text(function (d) {
-            return d.id;
-        });
-
+                        .on("end", dragended))
+                .on("mouseover", function (d) {
+                    tooltip(d)
+                })
+                .on("mouseout", function (d) {
+                    div.transition()
+                            .duration(500)
+                            .style("opacity", 0);
+                });
 
         simulation
                 .nodes(graph.nodes)
