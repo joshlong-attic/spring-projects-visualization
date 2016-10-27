@@ -4,16 +4,29 @@
     the Spring Project Topology
 </title>
 <style>
+    body {
+        padding: 0;
+        margin: 0 ;
+
+    }
+    svg#projects {
+        /*
+            this is 10px inset and the JS sets it to be the width of the UI - 20px,
+            so it appears set vertically and horizontally in the middle
+        */
+        border: 1px solid black;
+        margin: 10px ;
+        padding: 0;
+    }
 
     div.tooltip {
         position: absolute;
         text-align: center;
         width: 100px;
-        /*height: 28px;*/
         padding: 2px;
         font: 12px sans-serif;
         background: lightsteelblue;
-        border: 0px;
+        border: 0;
         border-radius: 8px;
         pointer-events: none;
     }
@@ -40,14 +53,33 @@
 <script src="https://d3js.org/d3.v4.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
 
-<svg width="1500" height="700" style="border: 1px solid black;"></svg>
+<svg id="projects"></svg>
 
 
 <script>
 
-    var config = {
-        rootUrl: 'http://localhost:8080'
+    var context = {
+        rootUrl: 'http://localhost:8080',
+        projects: null,
+        labels: null
     };
+
+
+    function resize() {
+        var svg = d3.select('#projects');
+        var w = document.documentElement.clientWidth - 20; // svg.width.baseVal.value;
+        var h = document.documentElement.clientHeight - 20;
+        svg.attr('viewBox', '0 0 ' + w + ' ' + h);
+        svg.attr('width', w + 'px');
+        svg.attr('height',  h +'px');
+
+        console.log('about to call redraw(' + w + ',' + h + ')');
+
+        svg.selectAll("*").remove();
+        console.log('just emptied the SVG element.')
+
+        redraw(w, h);
+    }
 
     function dedupe(a) {
         return a.filter(function (elem, pos) {
@@ -57,13 +89,21 @@
 
     function loadProjectData(callback) {
 
-        $.getJSON(config.rootUrl + "/project_metadata/projects?callback=?", function (projectIds) {
+        var projects = [], labels = [];
 
-            var projects = [], labels = [];
+        if (context.projects != null && context.labels != null) {
+            console.log('the projects and labels have been cached. ' +
+                    'Please reload the page to reload the project info from the API');
+            callback(context.projects, context.labels);
+            return;
+        }
 
+
+        $.getJSON(context.rootUrl + "/project_metadata/projects?callback=?", function (projectIds) {
+            console.log('called $.getJSON')
             var defers = projectIds.map(function (projectId) {
 
-                return $.getJSON(config.rootUrl + "/project_metadata/" + projectId + "?callback=?", function (project) {
+                return $.getJSON(context.rootUrl + "/project_metadata/" + projectId + "?callback=?", function (project) {
 
                     var derivedLabels = project['projectLabels'].map(function (pl) {
                         return pl['label'];
@@ -96,161 +136,176 @@
                     return p.labels.length > 0;
                 });
                 var l = dedupe(labels);
+                context.labels = l;
+                context.projects = p;
                 callback(p, l);
             });
+
+
+        });
+
+
+    }
+
+
+    function redraw(w, h) {
+
+        loadProjectData(function (projects, labels) {
+
+            function tooltip(node) {
+
+                function displayHtmlTooltip(html) {
+
+                    div.transition()
+                            .duration(200)
+                            .style("opacity", .9);
+
+                    div.html(html)
+                            .style("left", (d3.event.pageX) + "px")
+                            .style("top", (d3.event.pageY - 28) + "px");
+                }
+
+                projects
+                        .filter(function (p) {
+                            return p.project == node.id;
+                        })
+                        .forEach(function (resolvedProject) {
+                            displayHtmlTooltip(resolvedProject.name);
+                        });
+
+                labels
+                        .filter(function (l) {
+                            return l == node.id;
+                        })
+                        .forEach(function (resolvedLabel) {
+                            displayHtmlTooltip(resolvedLabel);
+                        });
+
+            }
+
+            var project_nodes = dedupe(projects.map(function (p) {
+                return {'id': p['project'], group: 1, type: 'project'};
+            }));
+
+            var label_nodes = labels.map(function (l) {
+                return {id: l, group: 2, type: 'label'};
+            });
+
+            var nodes = dedupe(project_nodes.concat(label_nodes));
+
+            // lets setup the links from labels to projects
+            var links = (function () {
+                var x = [];
+                projects.forEach(function (p) {
+                    p['labels'].forEach(function (l) {
+                        x.push({target: l, source: p['project']});
+                    });
+                });
+                return dedupe(x);
+            })();
+
+
+            var graph = {"nodes": nodes, "links": links};
+
+            function dragstarted(d) {
+                if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(d) {
+                d.fx = d3.event.x;
+                d.fy = d3.event.y;
+            }
+
+            function dragended(d) {
+                if (!d3.event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+
+            var div = d3.select("body")
+                    .append("div")
+                    .attr("class", "tooltip")
+                    .style("opacity", 0);
+
+            var svg = d3.select("svg"),
+                    width = w,  //+svg.attr("width"),
+                    height = h; // +svg.attr("height");
+
+
+            var color = d3.scaleOrdinal(d3.schemeCategory20);
+
+            var simulation = d3.forceSimulation()
+                    .force("link", d3.forceLink().id(function (d) {
+                        return d.id;
+                    }))
+                    .force("charge", d3.forceManyBody())
+                    .force("center", d3.forceCenter(width / 2, height / 2));
+
+            var link = svg.append("g")
+                    .attr("class", "links")
+                    .selectAll("line")
+                    .data(graph.links)
+                    .enter().append("line")
+                    .attr("stroke-width", function (d) {
+                        return Math.sqrt(d.value);
+                    });
+
+            var node = svg.append("g")
+                    .attr("class", "nodes")
+                    .selectAll("circle")
+                    .data(graph.nodes)
+                    .enter().append("circle")
+                    .attr("r", 5)
+                    .attr("fill", function (d) {
+                        return color(d.group);
+                    })
+                    .call(d3.drag()
+                            .on("start", dragstarted)
+                            .on("drag", dragged)
+                            .on("end", dragended))
+                    .on("mouseover", function (d) {
+                        tooltip(d)
+                    })
+                    .on("mouseout", function (d) {
+                        div.transition()
+                                .duration(500)
+                                .style("opacity", 0);
+                    });
+
+            simulation
+                    .nodes(graph.nodes)
+                    .on("tick", function () {
+                        link
+                                .attr("x1", function (d) {
+                                    return d.source.x;
+                                })
+                                .attr("y1", function (d) {
+                                    return d.source.y;
+                                })
+                                .attr("x2", function (d) {
+                                    return d.target.x;
+                                })
+                                .attr("y2", function (d) {
+                                    return d.target.y;
+                                });
+
+                        node
+                                .attr("cx", function (d) {
+                                    return d.x;
+                                })
+                                .attr("cy", function (d) {
+                                    return d.y;
+                                });
+                    });
+
+            simulation.force("link").links(graph.links);
         });
     }
 
 
-    loadProjectData(function (projects, labels) {
+    window.addEventListener("load", resize, false);
+    window.addEventListener('resize', resize, false);
 
-        function tooltip(node) {
-
-            function displayHtmlTooltip(html) {
-
-                div.transition()
-                        .duration(200)
-                        .style("opacity", .9);
-
-                div.html(html)
-                        .style("left", (d3.event.pageX) + "px")
-                        .style("top", (d3.event.pageY - 28) + "px");
-            }
-
-            projects
-                    .filter(function (p) {
-                        return p.project == node.id;
-                    })
-                    .forEach(function (resolvedProject) {
-                        displayHtmlTooltip(resolvedProject.name);
-                    });
-
-            labels
-                    .filter(function (l) {
-                        return l == node.id;
-                    })
-                    .forEach(function (resolvedLabel) {
-                        displayHtmlTooltip(resolvedLabel);
-                    });
-
-        }
-
-        var project_nodes = dedupe(projects.map(function (p) {
-            return {'id': p['project'], group: 1, type: 'project'};
-        }));
-
-        var label_nodes = labels.map(function (l) {
-            return {id: l, group: 2, type: 'label'};
-        });
-
-        var nodes = dedupe(project_nodes.concat(label_nodes));
-
-        // lets setup the links from labels to projects
-        var links = (function () {
-            var x = [];
-            projects.forEach(function (p) {
-                p['labels'].forEach(function (l) {
-                    x.push({target: l, source: p['project']});
-                });
-            });
-            return dedupe(x);
-        })();
-
-
-        var graph = {"nodes": nodes, "links": links};
-
-        function dragstarted(d) {
-            if (!d3.event.active) simulation.alphaTarget(0.3).restart();
-            d.fx = d.x;
-            d.fy = d.y;
-        }
-
-        function dragged(d) {
-            d.fx = d3.event.x;
-            d.fy = d3.event.y;
-        }
-
-        function dragended(d) {
-            if (!d3.event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
-        }
-
-        var div = d3.select("body")
-                .append("div")
-                .attr("class", "tooltip")
-                .style("opacity", 0);
-
-        var svg = d3.select("svg"),
-                width = +svg.attr("width"),
-                height = +svg.attr("height");
-
-        var color = d3.scaleOrdinal(d3.schemeCategory20);
-
-        var simulation = d3.forceSimulation()
-                .force("link", d3.forceLink().id(function (d) {
-                    return d.id;
-                }))
-                .force("charge", d3.forceManyBody())
-                .force("center", d3.forceCenter(width / 2, height / 2));
-
-        var link = svg.append("g")
-                .attr("class", "links")
-                .selectAll("line")
-                .data(graph.links)
-                .enter().append("line")
-                .attr("stroke-width", function (d) {
-                    return Math.sqrt(d.value);
-                });
-
-        var node = svg.append("g")
-                .attr("class", "nodes")
-                .selectAll("circle")
-                .data(graph.nodes)
-                .enter().append("circle")
-                .attr("r", 5)
-                .attr("fill", function (d) {
-                    return color(d.group);
-                })
-                .call(d3.drag()
-                        .on("start", dragstarted)
-                        .on("drag", dragged)
-                        .on("end", dragended))
-                .on("mouseover", function (d) {
-                    tooltip(d)
-                })
-                .on("mouseout", function (d) {
-                    div.transition()
-                            .duration(500)
-                            .style("opacity", 0);
-                });
-
-        simulation
-                .nodes(graph.nodes)
-                .on("tick", function () {
-                    link
-                        .attr("x1", function (d) {
-                            return d.source.x;
-                        })
-                        .attr("y1", function (d) {
-                            return d.source.y;
-                        })
-                        .attr("x2", function (d) {
-                            return d.target.x;
-                        })
-                        .attr("y2", function (d) {
-                            return d.target.y;
-                        });
-
-                    node
-                        .attr("cx", function (d) {
-                            return d.x;
-                        })
-                        .attr("cy", function (d) {
-                            return d.y;
-                        });
-                });
-
-        simulation.force("link").links(graph.links);
-    });
 </script>
