@@ -40,7 +40,7 @@
 <script src="https://d3js.org/d3.v4.min.js"></script>
 <script src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
 
-<svg width="1000" height="1000"></svg>
+<svg width="1500" height="700" style="border: 1px solid black;"></svg>
 
 
 <script>
@@ -55,7 +55,8 @@
         });
     }
 
-    function buildNetwork(callback) {
+    function loadProjectData(callback) {
+
         $.getJSON(config.rootUrl + "/project_metadata/projects?callback=?", function (projectIds) {
 
             var projects = [], labels = [];
@@ -101,7 +102,7 @@
     }
 
 
-    buildNetwork(function (projects, labels) {
+    loadProjectData(function (projects, labels) {
 
         function tooltip(node) {
 
@@ -117,16 +118,16 @@
             }
 
             projects
-                    .filter(function (proj) {
-                        return proj.project == node.id;
+                    .filter(function (p) {
+                        return p.project == node.id;
                     })
                     .forEach(function (resolvedProject) {
                         displayHtmlTooltip(resolvedProject.name);
                     });
 
             labels
-                    .filter(function (label) {
-                        return label == node.id;
+                    .filter(function (l) {
+                        return l == node.id;
                     })
                     .forEach(function (resolvedLabel) {
                         displayHtmlTooltip(resolvedLabel);
@@ -142,9 +143,7 @@
             return {id: l, group: 2, type: 'label'};
         });
 
-        var nodes = (function () {
-            return dedupe(project_nodes.concat(label_nodes));
-        })();
+        var nodes = dedupe(project_nodes.concat(label_nodes));
 
         // lets setup the links from labels to projects
         var links = (function () {
@@ -177,7 +176,8 @@
             d.fy = null;
         }
 
-        var div = d3.select("body").append("div")
+        var div = d3.select("body")
+                .append("div")
                 .attr("class", "tooltip")
                 .style("opacity", 0);
 
@@ -229,28 +229,26 @@
                 .nodes(graph.nodes)
                 .on("tick", function () {
                     link
-                            .attr("x1", function (d) {
-                                return d.source.x;
-                            })
-                            .attr("y1", function (d) {
-                                return d.source.y;
-                            })
-                            .attr("x2", function (d) {
-                                return d.target.x;
-                            })
-                            .attr("y2", function (d) {
-                                return d.target.y;
-                            });
+                        .attr("x1", function (d) {
+                            return d.source.x;
+                        })
+                        .attr("y1", function (d) {
+                            return d.source.y;
+                        })
+                        .attr("x2", function (d) {
+                            return d.target.x;
+                        })
+                        .attr("y2", function (d) {
+                            return d.target.y;
+                        });
 
                     node
-                            .attr("cx", function (d) {
-                                return d.x;
-                            })
-                            .attr("cy", function (d) {
-                                return d.y;
-                            });
-
-
+                        .attr("cx", function (d) {
+                            return d.x;
+                        })
+                        .attr("cy", function (d) {
+                            return d.y;
+                        });
                 });
 
         simulation.force("link").links(graph.links);
