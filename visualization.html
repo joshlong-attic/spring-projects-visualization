@@ -4,26 +4,57 @@
     <meta charset="utf-8">
     <style>
 
+        body {
+            margin: 0;
+            padding: 10px;
+        }
+
+        #projects {
+            position: absolute;
+            display: block;
+            border: 1px solid black;
+        }
+
+        #details {
+            position: relative;
+            width: 390px;
+            border: 1px solid black;
+        }
+
         .link {
             fill: none;
-            stroke: #666;
+            stroke: #ccc;
             stroke-width: 1.5px;
         }
 
         .node circle {
-            fill: #ccc;
-            stroke: #fff;
+            stroke: white;
             stroke-width: 1.5px;
         }
 
+        .node circle.project {
+            fill: green
+        }
+
+        .node circle.label {
+            fill: #5eb95e;
+        }
+
+        svg {
+            border: 1px solid black;
+        }
+
         text {
-            font: 10px sans-serif;
+            font: 13px sans-serif;
             pointer-events: none;
         }
 
     </style>
 </head>
 <body>
+<svg id="projects"></svg>
+<div id="details">
+</div>
 <!--<script src="//d3js.org/d3.v3.min.js"></script>-->
 <script src="jquery.js"></script>
 <script src="d3v3.js"></script>
@@ -101,8 +132,8 @@
 
     }
 
+    function redraw(width, height) {
 
-    window.addEventListener('load', function () {
 
         loadProjectData(function (projects, labels) {
 
@@ -119,29 +150,39 @@
             var nodes = {};
 
             links.forEach(function (link) {
-                link.source = nodes[link.source] || (nodes[link.source] = {name: link.source , type : 'label'});
-                link.target = nodes[link.target] || (nodes[link.target] = {name: link.target , type : 'project'});
+                link.source = nodes[link.source] || (nodes[link.source] = {
+                            name: link.source,
+                            type: 'project',
+                            project: projects.filter(function (p) {
+                                return p['project'] == link.source;
+                            })[0]
+                        });
+                link.target = nodes[link.target] || (nodes[link.target] = {name: link.target, type: 'label'});
             });
 
-            console.log(nodes)
-
             // todo: support resizing on screen reorientation
-            var width = document.documentElement.clientWidth,
-                    height = document.documentElement.clientHeight;
+
+
+            // reset canvas layouts
+            var details_width = 400;
+            var projects_width = width - details_width;
+            var svg = d3.select("#projects")
+                    .attr("width", projects_width)
+                    .attr("height", height);
+            svg.selectAll("*").remove();
+
+            var details = d3.select('#details');
+            details.style('left', (projects_width + 10) + 'px')
+            // reset canvas layouts
 
             var force = d3.layout.force()
                     .nodes(d3.values(nodes))
                     .links(links)
-                    .size([width, height])
-                    .linkDistance(60)
+                    .size([projects_width, height])
+                    .linkDistance(150)
                     .charge(-300)
                     .on("tick", tick)
                     .start();
-
-            var svg = d3.select("body")
-                    .append("svg")
-                    .attr("width", width)
-                    .attr("height", height);
 
             var link = svg.selectAll(".link")
                     .data(force.links())
@@ -151,24 +192,30 @@
             var node = svg.selectAll(".node")
                     .data(force.nodes())
                     .enter().append("g")
-                    .attr("fill", function (d) {
-                        console.log ( d)
-                        return  d.type == 'label' ? 'red' : 'green';
-                    })
-                    .attr("class", "node")
+                    .attr("class", 'node')
                     .on("mouseover", mouseover)
+                    .on("click", click)
                     .on("mouseout", mouseout)
                     .call(force.drag);
 
             node.append("circle")
+                    .attr("class", function (d) {
+                        return isAProject(d) ? 'project' : 'label';
+                    })
                     .attr("r", 8);
 
             node.append("text")
-                    .attr("x", 12)
+                    .attr("x", function (d) {
+                        return 20;
+                    })
                     .attr("dy", ".35em")
                     .text(function (d) {
-                        return d.name;
+                        return isAProject(d) ? d.project.name : d.name;
                     });
+
+            function isAProject(d) {
+                return d.type == 'project';
+            }
 
             function tick() {
                 link
@@ -191,6 +238,27 @@
                         });
             }
 
+            function click(d) {
+
+                var nodeClicked = d3.select(this);
+
+                function displayLabelPanel(d) {
+                    console.log('label panel coming right up!')
+                }
+
+                function displayProjectPanel(d) {
+                    console.log('project panel coming right up!');
+                    console.log('so you want to know about ' + d.project.name + ', eh?');
+                    console.log(d.project);
+                    details.selectAll("*").remove();
+                    details.append('div').text(d.project.name);
+                    details.append('div').text(d.project.repoUrl);
+                    details.append('div').text(d.project.labels.join(', '));
+                }
+
+                isAProject(d) ? displayProjectPanel(d) : displayLabelPanel(d);
+            }
+
             function mouseover() {
                 d3.select(this).select("circle").transition()
                         .duration(750)
@@ -203,7 +271,14 @@
                         .attr("r", 8);
             }
         });
-    });
+    }
+
+    var reset = function (e) {
+        redraw(document.documentElement.clientWidth - 20,
+                document.documentElement.clientHeight - 20);
+    };
+    window.addEventListener('load', reset);
+    window.addEventListener('resize', reset);
 
 </script>
 </body>
