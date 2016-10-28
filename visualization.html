@@ -119,10 +119,13 @@
             var nodes = {};
 
             links.forEach(function (link) {
-                link.source = nodes[link.source] || (nodes[link.source] = {name: link.source});
-                link.target = nodes[link.target] || (nodes[link.target] = {name: link.target});
+                link.source = nodes[link.source] || (nodes[link.source] = {name: link.source , type : 'label'});
+                link.target = nodes[link.target] || (nodes[link.target] = {name: link.target , type : 'project'});
             });
 
+            console.log(nodes)
+
+            // todo: support resizing on screen reorientation
             var width = document.documentElement.clientWidth,
                     height = document.documentElement.clientHeight;
 
@@ -148,6 +151,10 @@
             var node = svg.selectAll(".node")
                     .data(force.nodes())
                     .enter().append("g")
+                    .attr("fill", function (d) {
+                        console.log ( d)
+                        return  d.type == 'label' ? 'red' : 'green';
+                    })
                     .attr("class", "node")
                     .on("mouseover", mouseover)
                     .on("mouseout", mouseout)
