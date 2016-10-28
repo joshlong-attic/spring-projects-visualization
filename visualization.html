@@ -243,12 +243,10 @@
                 var nodeClicked = d3.select(this);
 
                 function displayLabelPanel(d) {
-                    console.log('label panel coming right up!')
+                    // todo maybe we could show other projects that share the same selected label?
                 }
 
                 function displayProjectPanel(d) {
-                    console.log('project panel coming right up!');
-                    console.log('so you want to know about ' + d.project.name + ', eh?');
                     console.log(d.project);
                     details.selectAll("*").remove();
                     details.append('div').text(d.project.name);
